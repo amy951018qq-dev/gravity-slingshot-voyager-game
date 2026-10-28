@@ -53,6 +53,15 @@ button.primary{background:linear-gradient(135deg,#1aa5d5,#56e0c4);color:#04121a;
 .stat{background:#071321;border-radius:12px;padding:10px}
 .stat span{font-size:12px;color:var(--muted)}
 .stat b{display:block;margin-top:3px;font-size:18px}
+.stat b.empty{color:var(--red)}
+.fuel-alert{
+  margin-top:12px;padding:11px 12px;border:1px solid rgba(255,123,135,.55);
+  border-radius:12px;background:rgba(95,22,36,.34);color:#ffe8eb;font-size:13px;line-height:1.55
+}
+.fuel-alert[hidden]{display:none}
+.fuel-alert strong{display:block;color:#ffb2ba;margin-bottom:3px}
+.fuel-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px}
+.fuel-actions button{padding:9px 6px;font-size:12px}
 .mission{
   background:linear-gradient(180deg,rgba(35,70,110,.42),rgba(7,18,32,.5));
   border-radius:14px;padding:12px;margin-top:12px
@@ -90,6 +99,9 @@ footer p{line-height:1.8;color:#d8e8f7}
   .miniHelp{display:none}
   .learn-grid{grid-template-columns:1fr}
   .formula{grid-template-columns:1fr}
+}
+@media(max-width:420px){
+  .fuel-actions{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -152,6 +164,16 @@ footer p{line-height:1.8;color:#d8e8f7}
       <div class="stat"><span>推進流量</span><b id="burnRate">0%/年</b></div>
       <div class="stat"><span>最近行星</span><b id="nearest">地球</b></div>
       <div class="stat"><span>任務時間</span><b id="missionTime">0 年</b></div>
+    </div>
+
+    <div class="fuel-alert" id="fuelAlert" role="alert" aria-live="assertive" hidden>
+      <strong>燃料已耗盡</strong>
+      <span>推進與自動修正已停止，飛船仍會受到重力影響。你可以暫停、重新開始，或改為手動駕駛繼續滑行。</span>
+      <div class="fuel-actions">
+        <button id="fuelPause">暫停</button>
+        <button id="fuelManual">改為手動</button>
+        <button id="fuelReset">重新開始</button>
+      </div>
     </div>
 
     <div class="mission">
@@ -347,11 +369,12 @@ const ui={
  timeScale:$('timeScale'),timeVal:$('timeVal'),zoom:$('zoom'),zoomVal:$('zoomVal'),
  assist:$('assist'),speed:$('speed'),fuel:$('fuel'),nearest:$('nearest'),
  fuelUsed:$('fuelUsed'),burnRate:$('burnRate'),missionTime:$('missionTime'),
- checklist:$('checklist'),reset:$('reset'),skip:$('skip')
+ checklist:$('checklist'),reset:$('reset'),skip:$('skip'),fuelAlert:$('fuelAlert'),
+ fuelPause:$('fuelPause'),fuelManual:$('fuelManual'),fuelReset:$('fuelReset')
 };
 
 let W=0,H=0,dpr=1,last=0,running=true,keys={},camera={x:0,y:0,zoom:1};
-let ship,planets=[],trail=[],stars=[],missionIndex=0,missionTime=0,finished=false;
+let ship,planets=[],trail=[],stars=[],missionIndex=0,missionTime=0,finished=false,fuelDepleted=false;
 let demo={thrusting:false,burnRate:0,phase:'接近',nav:{targetName:null,phase:'接近',outboundTime:0}};
 const route=['木星','土星','天王星','海王星','冥王星'];
 const DEMO_FLYBY_RADIUS=92,DEMO_DEPARTURE_RADIUS=180;
@@ -390,7 +413,8 @@ function init(){
   };
   camera.x=ship.x;camera.y=ship.y;camera.zoom=Number(ui.zoom.value);
   demo={thrusting:false,burnRate:0,phase:'接近',nav:{targetName:null,phase:'接近',outboundTime:0}};
-  trail=[];missionIndex=0;missionTime=0;finished=false;running=true;ui.pause.textContent='暫停';
+  trail=[];missionIndex=0;missionTime=0;finished=false;fuelDepleted=false;running=true;ui.pause.textContent='暫停';
+  ui.fuelAlert.hidden=true;ui.fuel.classList.remove('empty');
   renderChecklist();
 }
 
@@ -420,6 +444,16 @@ function wrapAngle(a){
 
 function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
 
+function markFuelDepleted(){
+  if(fuelDepleted)return;
+  fuelDepleted=true;
+  ship.fuel=0;
+  demo.thrusting=false;
+  demo.burnRate=0;
+  ui.fuelAlert.hidden=false;
+  ui.fuel.classList.add('empty');
+}
+
 function steerToward(angle,dt){
   const diff=wrapAngle(angle-ship.angle);
   ship.angle += clamp(diff*2.7,-1,1)*1.9*dt;
@@ -427,7 +461,7 @@ function steerToward(angle,dt){
 }
 
 function useThruster(dt,power=1){
-  if(ship.fuel<=0)return false;
+  if(ship.fuel<=0){markFuelDepleted();return false;}
   const acc=16*power;
   const used=Math.min(ship.fuel,2.4*power*dt);
   ship.vx+=Math.cos(ship.angle)*acc*dt;
@@ -435,11 +469,12 @@ function useThruster(dt,power=1){
   ship.fuel-=used;
   ship.fuelUsed+=used;
   demo.burnRate=used/(dt*.7);
-  return true;
+  if(ship.fuel<=0)markFuelDepleted();
+  return !fuelDepleted;
 }
 
 function demoGuidedBurn(dt,desiredVx,desiredVy,power){
-  if(ship.fuel<=0)return false;
+  if(ship.fuel<=0){markFuelDepleted();return false;}
   const dvx=desiredVx-ship.vx,dvy=desiredVy-ship.vy;
   const dv=Math.hypot(dvx,dvy);
   if(dv<.2)return false;
@@ -451,11 +486,13 @@ function demoGuidedBurn(dt,desiredVx,desiredVy,power){
   ship.fuel-=used;
   ship.fuelUsed+=used;
   demo.burnRate=used/(dt*.7);
-  return true;
+  if(ship.fuel<=0)markFuelDepleted();
+  return !fuelDepleted;
 }
 
 function demoAutopilot(dt,target){
   if(!target){demo.thrusting=false;demo.phase='任務完成';return;}
+  if(fuelDepleted){demo.thrusting=false;demo.phase='燃料耗盡';return;}
 
   const dx=target.x-ship.x,dy=target.y-ship.y;
   const dist=Math.hypot(dx,dy);
@@ -498,7 +535,7 @@ function demoAutopilot(dt,target){
   const desiredVy=aimDy/aimDist*desiredSpeed+target.vy*.65;
   const guidePower=dist<150?.34:.58;
   demo.thrusting=angleError<1.2 && demoGuidedBurn(dt,desiredVx,desiredVy,guidePower);
-  demo.phase=demo.thrusting?'自動推進':'重力滑行';
+  demo.phase=fuelDepleted?'燃料耗盡':(demo.thrusting?'自動推進':'重力滑行');
 }
 
 function updateShip(dt){
@@ -673,7 +710,8 @@ function draw(){
   const targetText=tgt?`${tgt.name}（距離 ${Math.hypot(tgt.x-ship.x,tgt.y-ship.y).toFixed(0)}）`:'任務完成';
   if(!ship.dead&&!finished){
     const modeText=ui.assist.value==='demo'?`<br>全自動展示：${demo.phase}。距離行星 ${DEMO_FLYBY_RADIUS} 單位內開始掠飛，離開至 ${DEMO_DEPARTURE_RADIUS} 單位後切換航點。`:'';
-    ui.hud.innerHTML=`<b>下一航點：${targetText}</b><br>讓綠色箭頭保持在前方，接近行星後從旁邊掠過。${modeText}`;
+    const fuelText=fuelDepleted?'<br><b style="color:#ffb2ba">燃料耗盡：推進與自動修正已停止。請使用右側燃料提示中的操作。</b>':'';
+    ui.hud.innerHTML=`<b>下一航點：${targetText}</b><br>讓綠色箭頭保持在前方，接近行星後從旁邊掠過。${modeText}${fuelText}`;
   }
   ui.speed.textContent=speed.toFixed(1);
   ui.fuel.textContent=ship.fuel.toFixed(0)+'%';
@@ -710,6 +748,9 @@ addEventListener('keydown',e=>{
 addEventListener('keyup',e=>keys[e.key]=false);
 
 ui.pause.onclick=()=>{running=!running;ui.pause.textContent=running?'暫停':'繼續'};
+ui.fuelPause.onclick=()=>{running=false;ui.pause.textContent='繼續';draw()};
+ui.fuelManual.onclick=()=>{ui.assist.value='none';ui.assist.dispatchEvent(new Event('change'));draw()};
+ui.fuelReset.onclick=()=>ui.reset.click();
 ui.timeScale.oninput=()=>ui.timeVal.textContent=Number(ui.timeScale.value).toFixed(1)+'×';
 ui.zoom.oninput=()=>ui.zoomVal.textContent=Number(ui.zoom.value).toFixed(2)+'×';
 ui.assist.onchange=()=>{
