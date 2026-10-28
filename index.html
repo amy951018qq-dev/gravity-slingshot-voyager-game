@@ -678,7 +678,7 @@ function drawShip(){
   const s=worldToScreen(ship.x,ship.y);
   ctx.save();
   ctx.translate(s.x,s.y);
-  ctx.rotate(ship.angle);
+  ctx.rotate(Math.hypot(ship.vx,ship.vy) > 0.5 ? Math.atan2(ship.vy,ship.vx) : ship.angle);
   // Keep the silhouette readable at every zoom level while preserving its
   // stainless-steel Starship proportions: a rounded nose, long cylindrical
   // body, black heat-shield tiles and four landing fins around the tail.
