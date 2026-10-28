@@ -166,7 +166,7 @@ footer p{line-height:1.8;color:#d8e8f7}
 
     <p class="note">
       靠近行星時不要正面撞上。從行星運動方向的後方掠過，通常更容易獲得加速；
-      從前方掠過則可能減速。全自動展示模式會自動控制轉向與推進，並顯示推進劑剩餘量、已耗量與即時流量。
+      從前方掠過則可能減速。全自動展示模式會依序接近、掠飛並離開行星，再切換至下一航點；畫面也會顯示推進劑剩餘量、已耗量與即時流量。
     </p>
   </aside>
 </main>
@@ -352,8 +352,10 @@ const ui={
 
 let W=0,H=0,dpr=1,last=0,running=true,keys={},camera={x:0,y:0,zoom:1};
 let ship,planets=[],trail=[],stars=[],missionIndex=0,missionTime=0,finished=false;
-let demo={thrusting:false,burnRate:0,phase:'巡航'};
+let demo={thrusting:false,burnRate:0,phase:'接近',nav:{targetName:null,phase:'接近',outboundTime:0}};
 const route=['木星','土星','天王星','海王星','冥王星'];
+const DEMO_FLYBY_RADIUS=92,DEMO_DEPARTURE_RADIUS=180;
+const DEMO_OUTBOUND_SPEED=0.5,DEMO_OUTBOUND_CONFIRMATION=.2;
 
 function resize(){
   const r=canvas.getBoundingClientRect();
@@ -387,7 +389,7 @@ function init(){
     fuel:100,fuelUsed:0,r:4,dead:false
   };
   camera.x=ship.x;camera.y=ship.y;camera.zoom=Number(ui.zoom.value);
-  demo={thrusting:false,burnRate:0,phase:'巡航'};
+  demo={thrusting:false,burnRate:0,phase:'接近',nav:{targetName:null,phase:'接近',outboundTime:0}};
   trail=[];missionIndex=0;missionTime=0;finished=false;running=true;ui.pause.textContent='暫停';
   renderChecklist();
 }
@@ -457,6 +459,28 @@ function demoAutopilot(dt,target){
 
   const dx=target.x-ship.x,dy=target.y-ship.y;
   const dist=Math.hypot(dx,dy);
+  if(demo.nav.targetName!==target.name){
+    demo.nav={targetName:target.name,phase:'接近',outboundTime:0};
+  }
+  if(demo.nav.phase==='接近'&&dist<=DEMO_FLYBY_RADIUS)demo.nav.phase='掠飛';
+  if(demo.nav.phase==='掠飛'){
+    const radialSpeed=dist>0?((target.vx-ship.vx)*dx+(target.vy-ship.vy)*dy)/dist:0;
+    demo.nav.outboundTime=radialSpeed>DEMO_OUTBOUND_SPEED?demo.nav.outboundTime+dt:0;
+    if(demo.nav.outboundTime>=DEMO_OUTBOUND_CONFIRMATION)demo.nav.phase='離開';
+  }
+
+  if(demo.nav.phase==='掠飛'){
+    demo.thrusting=false;
+    demo.phase='掠飛';
+    return;
+  }
+  if(demo.nav.phase==='離開'){
+    demo.thrusting=false;
+    demo.phase='離開';
+    steerToward(Math.atan2(ship.vy,ship.vx),dt);
+    return;
+  }
+
   const targetSpeed=Math.hypot(target.vx,target.vy)||1;
   const tx=target.vx/targetSpeed,ty=target.vy/targetSpeed;
   const cross=dx*target.vy-dy*target.vx;
@@ -474,7 +498,7 @@ function demoAutopilot(dt,target){
   const desiredVy=aimDy/aimDist*desiredSpeed+target.vy*.65;
   const guidePower=dist<150?.34:.58;
   demo.thrusting=angleError<1.2 && demoGuidedBurn(dt,desiredVx,desiredVy,guidePower);
-  demo.phase=dist<120?'掠飛修正':(demo.thrusting?'自動推進':'重力滑行');
+  demo.phase=demo.thrusting?'自動推進':'重力滑行';
 }
 
 function updateShip(dt){
@@ -537,8 +561,9 @@ function updateShip(dt){
   const tgt=targetPlanet();
   if(tgt){
     const d=Math.hypot(tgt.x-ship.x,tgt.y-ship.y);
-    const arrivalRadius=ui.assist.value==='demo'?Math.max(92,tgt.size+70):Math.max(30,tgt.size+20);
-    if(d<arrivalRadius){
+    const demoDeparted=ui.assist.value==='demo'&&demo.nav.targetName===tgt.name&&demo.nav.phase==='離開'&&d>=Math.max(DEMO_DEPARTURE_RADIUS,tgt.size+130);
+    const normalArrival=ui.assist.value!=='demo'&&d<Math.max(30,tgt.size+20);
+    if(demoDeparted||normalArrival){
       tgt.visited=true;
       missionIndex++;
       renderChecklist();
@@ -647,7 +672,7 @@ function draw(){
   const tgt=targetPlanet();
   const targetText=tgt?`${tgt.name}（距離 ${Math.hypot(tgt.x-ship.x,tgt.y-ship.y).toFixed(0)}）`:'任務完成';
   if(!ship.dead&&!finished){
-    const modeText=ui.assist.value==='demo'?`<br>全自動展示：${demo.phase}，會自動使用少量推進劑修正掠飛。`:'';
+    const modeText=ui.assist.value==='demo'?`<br>全自動展示：${demo.phase}。距離行星 ${DEMO_FLYBY_RADIUS} 單位內開始掠飛，離開至 ${DEMO_DEPARTURE_RADIUS} 單位後切換航點。`:'';
     ui.hud.innerHTML=`<b>下一航點：${targetText}</b><br>讓綠色箭頭保持在前方，接近行星後從旁邊掠過。${modeText}`;
   }
   ui.speed.textContent=speed.toFixed(1);
@@ -689,6 +714,8 @@ ui.timeScale.oninput=()=>ui.timeVal.textContent=Number(ui.timeScale.value).toFix
 ui.zoom.oninput=()=>ui.zoomVal.textContent=Number(ui.zoom.value).toFixed(2)+'×';
 ui.assist.onchange=()=>{
   if(ui.assist.value==='demo'){
+    demo.nav={targetName:null,phase:'接近',outboundTime:0};
+    demo.phase='接近';
     running=true;ui.pause.textContent='暫停';
     ui.timeScale.value='3';ui.timeScale.oninput();
     ui.zoom.value='0.85';ui.zoom.oninput();
