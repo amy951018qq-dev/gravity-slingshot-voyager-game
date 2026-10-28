@@ -676,13 +676,63 @@ function drawTrail(){
 
 function drawShip(){
   const s=worldToScreen(ship.x,ship.y);
-  ctx.save();ctx.translate(s.x,s.y);ctx.rotate(ship.angle);
-  ctx.fillStyle='#eaf7ff';
-  ctx.beginPath();ctx.moveTo(9,0);ctx.lineTo(-6,-4);ctx.lineTo(-3,0);ctx.lineTo(-6,4);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#63dcff';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(-2,0);ctx.lineTo(-12,-8);ctx.moveTo(-2,0);ctx.lineTo(-12,8);ctx.stroke();
-  if(((keys.ArrowUp||keys.w||keys.W)||demo.thrusting)&&ship.fuel>0){
-    ctx.fillStyle='#ff9a5c';ctx.beginPath();ctx.moveTo(-5,-2);ctx.lineTo(-14,0);ctx.lineTo(-5,2);ctx.closePath();ctx.fill();
+  ctx.save();
+  ctx.translate(s.x,s.y);
+  ctx.rotate(ship.angle);
+  // Keep the silhouette readable at every zoom level while preserving its
+  // stainless-steel Starship proportions: a rounded nose, long cylindrical
+  // body, black heat-shield tiles and four landing fins around the tail.
+  const scale=Math.max(.82,Math.min(1.35,camera.zoom));
+  ctx.scale(scale,scale);
+
+  const thrusting=(keys.ArrowUp||keys.w||keys.W||demo.thrusting)&&ship.fuel>0;
+  if(thrusting){
+    const flame=ctx.createLinearGradient(-35,0,-17,0);
+    flame.addColorStop(0,'rgba(255,239,157,0)');
+    flame.addColorStop(.35,'#ffd166');
+    flame.addColorStop(1,'#ff7b45');
+    ctx.fillStyle=flame;
+    ctx.beginPath();ctx.moveTo(-20,-3);ctx.quadraticCurveTo(-31,-5,-41,0);
+    ctx.quadraticCurveTo(-31,5,-20,3);ctx.closePath();ctx.fill();
+    ctx.fillStyle='rgba(255,255,220,.95)';
+    ctx.beginPath();ctx.moveTo(-20,-1.5);ctx.lineTo(-35,0);ctx.lineTo(-20,1.5);ctx.closePath();ctx.fill();
   }
+
+  // Tail fins / landing surfaces.
+  ctx.fillStyle='#aeb7bd';ctx.strokeStyle='#5f6970';ctx.lineWidth=1.1;
+  ctx.beginPath();ctx.moveTo(-15,-9);ctx.lineTo(-24,-17);ctx.lineTo(-25,-4);ctx.lineTo(-20,-1);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-15,9);ctx.lineTo(-24,17);ctx.lineTo(-25,4);ctx.lineTo(-20,1);ctx.closePath();ctx.fill();ctx.stroke();
+
+  // Main stainless-steel hull with a soft lit side and darker lower edge.
+  const hull=ctx.createLinearGradient(0,-12,0,12);
+  hull.addColorStop(0,'#f4f7f8');
+  hull.addColorStop(.45,'#d3d8da');
+  hull.addColorStop(1,'#8e989d');
+  ctx.fillStyle=hull;ctx.strokeStyle='#657078';ctx.lineWidth=1.25;
+  ctx.beginPath();ctx.moveTo(24,0);
+  ctx.quadraticCurveTo(20,-8,13,-11);
+  ctx.lineTo(-16,-11);ctx.quadraticCurveTo(-22,-8,-22,0);
+  ctx.quadraticCurveTo(-22,8,-16,11);ctx.lineTo(13,11);
+  ctx.quadraticCurveTo(20,8,24,0);ctx.closePath();ctx.fill();ctx.stroke();
+
+  // Dark heat-shield tiles on the nose, echoing the reference silhouette.
+  ctx.fillStyle='#3b4145';
+  ctx.beginPath();ctx.moveTo(24,0);ctx.quadraticCurveTo(20,-7,14,-10);
+  ctx.lineTo(10,-10);ctx.lineTo(14,0);ctx.lineTo(10,10);ctx.lineTo(14,10);
+  ctx.quadraticCurveTo(20,7,24,0);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.28)';ctx.lineWidth=.8;
+  for(let y=-7;y<=7;y+=3){ctx.beginPath();ctx.moveTo(14,y);ctx.lineTo(21,y*.68);ctx.stroke();}
+
+  // Long vertical highlight and a few engine-bay bands.
+  ctx.strokeStyle='rgba(255,255,255,.72)';ctx.lineWidth=1.1;
+  ctx.beginPath();ctx.moveTo(5,-9);ctx.lineTo(5,9);ctx.stroke();
+  ctx.strokeStyle='rgba(56,63,67,.9)';ctx.lineWidth=1.7;
+  ctx.beginPath();ctx.moveTo(-14,-10);ctx.lineTo(-14,10);ctx.moveTo(-18,-9);ctx.lineTo(-18,9);ctx.stroke();
+  ctx.fillStyle='#2c3236';ctx.fillRect(-21,-5,4,10);
+
+  // Three compact engine bells at the base.
+  ctx.fillStyle='#596267';
+  for(const x of [-15,-10,-5]){ctx.beginPath();ctx.arc(x,0,2.2,0,Math.PI*2);ctx.fill();}
   ctx.restore();
 }
 
